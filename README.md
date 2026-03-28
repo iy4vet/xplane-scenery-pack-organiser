@@ -8,6 +8,8 @@ It will read and sort all scenery packs, carry over DISABLED tags, check for air
 
 ### Option A: Pre-built binary (no Python needed)
 
+Download the binary for your OS from the [Releases](https://github.com/iy4vet/xplane-scenery-pack-organiser/releases/latest/) page:
+
 | Platform | Download |
 | -------- | -------- |
 | Windows x64 | [`organiser-windows-x64.exe`](https://github.com/iy4vet/xplane-scenery-pack-organiser/releases/latest/download/organiser-windows-x64.exe) |
