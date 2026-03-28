@@ -56,7 +56,6 @@ jobs:
         run: >
           pyinstaller
           --onefile
-          --collect-all psutil
           --collect-all py7zr
           --collect-all pycryptodomex
           --collect-all PyYAML
