@@ -1,4 +1,23 @@
-venv
-dist
-build
+# Virtual environments
+.venv/
+venv/
+.conda/
+conda/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller
+dist/
+build/
 *.spec
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
