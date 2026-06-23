@@ -1,4 +1,4 @@
-# Scenery Pack Organiser - XP10/11/12 v3.2r2
+# Scenery Pack Organiser - XP10/11/12 v3.2r3
 
 Are you tired of sifting through all the packs in the Custom Scenery folder and reordering them manually? Do you hate having to start and quit X-Plane just to add new scenery packs to the file so you can organise it? This utility is for you!
 
@@ -92,6 +92,7 @@ A huge thank-you to these awesome people:
 
 ## Changelog
 
+- **3.2r3** - Minor fixes
 - **3.2r2** - Add: double-click execute on Linux/macOS. Improve: CLI polish
 - **3.2r1** - Fix: 7z-compressed DSF can have any internal filename (eg. o4xp_2_xp12 output)
 - **3.1r1** - Add: macOS alias parsing. Add: CI/CD pipeline with 6-platform binary builds. Fix: disabled pack import. Update: all dependencies for Windows ARM64 compatibility.

@@ -5,6 +5,7 @@ import collections
 import copy
 import hashlib
 import locale
+import logging
 import os
 import pathlib
 import re
@@ -29,7 +30,10 @@ if sys.platform == "darwin":
     import Cocoa
 
 # Version
-__version__ = "3.2r2"
+__version__ = "3.2r3"
+
+# Module logger
+log = logging.getLogger("organiser")
 
 # Global constant declarations
 # Environment marker set when we re-launch ourselves inside a terminal emulator
@@ -48,12 +52,21 @@ SortPacksResult = collections.namedtuple("SortPacksResult", ["unsorted_registry"
 AirportData = collections.namedtuple("AirportData", ["icao_registry", "airport_registry"])
 
 
+# Map the --verbose level onto the logging library and route diagnostics to it.
+def configure_logging(verbose_level: int) -> None:
+    level = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG}.get(verbose_level, logging.WARNING)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("[%(levelname).1s] %(message)s"))
+    log.handlers.clear()
+    log.addHandler(handler)
+    log.setLevel(level)
+    log.propagate = False
+
+
 # TODO: Steam X-Plane support
 class LocateXPlane:
     # Ref: https://developer.x-plane.com/article/how-to-programmatically-locate-x-plane-9-or-10/
-    def __init__(self, verbose: int) -> None:
-        # External variable declarations
-        self.verbose = verbose
+    def __init__(self) -> None:
         # Internal variable declarations
         self.direct_lines = list()
         self.steam_lines = list()
@@ -68,11 +81,9 @@ class LocateXPlane:
             self.prefs_folder = pathlib.Path(os.path.expanduser("~/.x-plane"))
         if self.prefs_folder is None:
             print(f"Unsupported OS detected. Please report this error. Detected platform: {sys.platform}")
-            if self.verbose >= 1:
-                print(f"  [I] LocateXPlane init: unsupported OS")
+            log.info("LocateXPlane init: unsupported OS")
         else:
-            if self.verbose >= 1:
-                print(f"  [I] LocateXPlane init: using {self.prefs_folder}")
+            log.info(f"LocateXPlane init: using {self.prefs_folder}")
 
     # Main code and return
     def main(self) -> pathlib.Path:
@@ -92,8 +103,7 @@ class LocateXPlane:
             for version in ["_10", "_11", "_12"]:
                 formatted_version = version.strip("_") if version else "9"
                 try:
-                    if self.verbose >= 2:
-                        print(f"  [I] LocateXPlane direct_search: reading {formatted_version}")
+                    log.debug(f"LocateXPlane direct_search: reading {formatted_version}")
                     install_file = self.prefs_folder / f"x-plane_install{version}.txt"
                     with open(install_file, "r", encoding="utf-8") as file:
                         # ...and read its lines to get potential install paths
@@ -101,10 +111,9 @@ class LocateXPlane:
                             self.direct_lines.append([f"X-Plane {formatted_version}", install_line, install_file])
                 # In case the text file for this version doesn't exist
                 except FileNotFoundError:
-                    if self.verbose >= 1:
-                        print(f"  [W] couldn't find {formatted_version}")
-        elif self.verbose >= 1:
-            print("  [I] LocateXPlane direct_search: folder doesn't exist")
+                    log.info(f"couldn't find {formatted_version}")
+        else:
+            log.info("LocateXPlane direct_search: folder doesn't exist")
 
     # Search Steam X-Plane installs
     def steam_search(self) -> None:
@@ -119,8 +128,7 @@ class LocateXPlane:
             install_path = pathlib.Path(install_line.strip("\n"))
             # ...and test each path to ensure it's not "old and stale". if it is...
             if (install_path / "Custom Scenery").exists() and (install_path / "Resources").exists():
-                if self.verbose >= 2:
-                    print(f"  [I] LocateXPlane direct_test: validated {install_path}")
+                log.debug(f"LocateXPlane direct_test: validated {install_path}")
             else:
                 # ...remove it from the text file!
                 print(f"Removing stale path {install_path} from {install_file}")
@@ -150,8 +158,7 @@ class LocateXPlane:
             print("Otherwise, enter the path to your X-Plane folder.")
         # ...or if we didn't find any paths, just ask the user to input a path
         else:
-            if self.verbose >= 1:
-                print(f"  [I] LocateXPlane get_choice: couldn't locate any x-plane folders automatically")
+            log.info("LocateXPlane get_choice: couldn't locate any x-plane folders automatically")
             print("Please enter the path to your X-Plane folder.")
         # Get the user's selection, then validate it
         while True:
@@ -171,9 +178,8 @@ class LocateXPlane:
 
 # TODO: macOS Alias support
 class SortPacks:
-    def __init__(self, verbose: int, xplane_path: pathlib.Path, temp_path: pathlib.Path) -> None:
+    def __init__(self, xplane_path: pathlib.Path, temp_path: pathlib.Path) -> None:
         # External variable declarations
-        self.verbose = verbose
         self.xplane_path = xplane_path
         self.temp_path = temp_path
         # Internal variable declarations
@@ -190,7 +196,7 @@ class SortPacks:
         self.meshes = {"Ortho": [], "Terrain": []}
         self.other = {"Plugin": [], "Library": []}
         # Misc functions declarations
-        self.misc_functions = misc_functions(verbose)
+        self.misc_functions = misc_functions()
 
     # Main code and return
     def main(self) -> tuple:
@@ -229,10 +235,9 @@ class SortPacks:
                         if line.startswith(disabled):
                             self.disable_registry[line.split(disabled, maxsplit=1)[1].strip("\n")[:-1]] = disabled
                             break
-            if self.verbose >= 1:
-                print("  [I] SortPacks import_disabled: loaded existing ini")
-        elif self.verbose >= 1:
-            print("  [I] SortPacks import_disabled: could not find ini")
+            log.info("SortPacks import_disabled: loaded existing ini")
+        else:
+            log.info("SortPacks import_disabled: could not find ini")
         # Read unsorted ini to remove packs disabled for being unclassified
         if unsorted_ini_path.is_file():
             with open(unsorted_ini_path, "r", encoding="utf-8") as unsorted_ini_file:
@@ -244,10 +249,9 @@ class SortPacks:
                                 break
                             except KeyError:
                                 pass
-            if self.verbose >= 1:
-                print("  [I] SortPacks import_disabled: loaded unsorted ini")
-        elif self.verbose >= 1:
-            print("  [I] SortPacks import_disabled: could not find unsorted ini")
+            log.info("SortPacks import_disabled: loaded unsorted ini")
+        else:
+            log.info("SortPacks import_disabled: could not find unsorted ini")
         # Ask if user wants to carry these disabled packs over
         if self.disable_registry:
             print("I see you've disabled some packs in the current scenery_packs.ini")
@@ -263,6 +267,17 @@ class SortPacks:
                 else:
                     print("  Sorry, I didn't understand.")
 
+    # Hash a file with both md5 and sha1 in a single pass, returning hex digests
+    @staticmethod
+    def hash_file(path: pathlib.Path) -> tuple:
+        md5 = hashlib.md5()
+        sha1 = hashlib.sha1()
+        with open(path, "rb") as file:
+            for chunk in iter(lambda: file.read(BUF_SIZE), b""):
+                md5.update(chunk)
+                sha1.update(chunk)
+        return md5.hexdigest(), sha1.hexdigest()
+
     # Read uncompresssed DSF
     # This code is adapted from https://gist.github.com/nitori/6e7be6c9f00411c12aacc1ee964aee88 - thank you very much!
     # Ref: https://developer.x-plane.com/article/dsf-file-format-specification/
@@ -271,9 +286,10 @@ class SortPacks:
         try:
             size = os.stat(filepath).st_size
         except FileNotFoundError:
-            if self.verbose >= 2:
-                print(f"  [E] SortPacks mesh_dsf_decode: expected dsf '{str(filepath.name)}'")
-                print(f"                 extracted files from dsf: {self.misc_functions.dir_list(filepath.parent.absolute(), 'files')}")
+            # Guard the dir_list() scan so it only runs when DEBUG is actually shown
+            if log.isEnabledFor(logging.DEBUG):
+                log.debug(f"SortPacks mesh_dsf_decode: expected dsf '{filepath.name}'")
+                log.debug(f"  extracted files from dsf: {self.misc_functions.dir_list(filepath.parent.absolute(), 'files')}")
             return "ERR: DCDE: NameMatch"
         footer_start = size - 16  # 16 byte (128bit) for md5 hash
         digest = hashlib.md5()
@@ -300,30 +316,25 @@ class SortPacks:
                     # Remaining bit is the checksum, ensure it matches. If not, return a string
                     checksum = dsf.read()
                     if checksum != digest.digest():
-                        if self.verbose >= 2:
-                            print(f"  [E] SortPacks mesh_dsf_decode: checksum mismatch")
+                        log.debug("SortPacks mesh_dsf_decode: checksum mismatch")
                         return "ERR: DCDE: !Checksum"
                     # Return dsf_data
                     return dsf_data
                 # If something was wrong with the header
                 elif header != b"XPLNEDSF":
                     if header.startswith(b"7z"):
-                        if self.verbose >= 2:
-                            print(f"  [E] SortPacks mesh_dsf_decode: got '7z' header. extraction failure?")
+                        log.debug("SortPacks mesh_dsf_decode: got '7z' header. extraction failure?")
                         return "ERR: DCDE: NoExtract"
                     else:
-                        if self.verbose >= 2:
-                            print(f"  [E] SortPacks mesh_dsf_decode: unknown header. got '{header}'")
+                        log.debug(f"SortPacks mesh_dsf_decode: unknown header. got '{header}'")
                         return "ERR: DCDE: !XPLNEDSF"
                 # If something was wrong with the version
                 elif version != 1:
-                    if self.verbose >= 2:
-                        print(f"  [E] SortPacks mesh_dsf_decode: unknown dsf version. got '{version}'")
+                    log.debug(f"SortPacks mesh_dsf_decode: unknown dsf version. got '{version}'")
                     return f"ERR: DCDE: v{((8 - len(str(version))) * ' ') + str(version)}"
         # Safety net
         except Exception as e:
-            if self.verbose >= 2:
-                print(f"  [E] SortPacks mesh_dsf_decode: unhandled error '{e}'")
+            log.debug(f"SortPacks mesh_dsf_decode: unhandled error '{e}'")
             return "ERR: DCDE: BadDSFErr"
 
     # Caching stuff for DSF
@@ -332,29 +343,18 @@ class SortPacks:
         try:
             with open(end_directory.parent.absolute() / "sporganiser_cache.yaml", "r") as yaml_file:
                 dsf_cache_data = yaml.load(yaml_file, Loader=yaml.FullLoader)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks mesh_dsf_cache: loaded cache")
+                log.debug("SortPacks mesh_dsf_cache: loaded cache")
         except FileNotFoundError:
             dsf_cache_data = {"version": 220}
         # If value given, operate in write mode
         if str(value) and str(tile):
-            # Generate hashes
-            sha1 = hashlib.sha1()
-            md5 = hashlib.md5()
-            with open(end_directory / tile, "rb") as dsf_file:
-                while True:
-                    data = dsf_file.read(BUF_SIZE)
-                    if not data:
-                        break
-                    sha1.update(data)
-                    md5.update(data)
-            # Store result to speed up future runs
-            dsf_cache_data_new = {f"{tile}": {tag: value, "md5": md5.hexdigest(), "sha1": sha1.hexdigest()}}
+            # Generate hashes and store result to speed up future runs
+            md5hex, sha1hex = self.hash_file(end_directory / tile)
+            dsf_cache_data_new = {f"{tile}": {tag: value, "md5": md5hex, "sha1": sha1hex}}
             dsf_cache_data.update(dsf_cache_data_new)
             with open(end_directory.parent.absolute() / "sporganiser_cache.yaml", "w") as yaml_file:
                 yaml.dump(dsf_cache_data, yaml_file)
-            if self.verbose >= 2:
-                print(f"  [I] SortPacks mesh_dsf_cache: new cache written")
+            log.debug("SortPacks mesh_dsf_cache: new cache written")
         # Otherwise, operate in read mode
         else:
             # Read cache
@@ -364,31 +364,20 @@ class SortPacks:
                     # Check version
                     if dsf == "version":
                         if not dsf_cache_data[dsf] == 220:
-                            if self.verbose >= 2:
-                                print(f"  [W] SortPacks mesh_dsf_cache: unknown version tag. got '{dsf_cache_data[dsf]}'")
+                            log.debug(f"SortPacks mesh_dsf_cache: unknown version tag. got '{dsf_cache_data[dsf]}'")
                             dsf_cache_data = {"version": 220}
                             break
                         continue
                     # Locate dsf cached and check that it exists
                     dsf_path = end_directory / dsf
                     if not dsf_path.exists():
-                        if self.verbose >= 2:
-                            print(f"  [W] SortPacks mesh_dsf_cache: cached dsf '{str(dsf_path)}' doesn't exist")
+                        log.debug(f"SortPacks mesh_dsf_cache: cached dsf '{dsf_path}' doesn't exist")
                         del dsf_cache_data[dsf]
                         continue
                     # Hash dsf to ensure cached data is still valid
-                    sha1 = hashlib.sha1()
-                    md5 = hashlib.md5()
-                    with open(dsf_path, "rb") as dsf_file:
-                        while True:
-                            data = dsf_file.read(BUF_SIZE)
-                            if not data:
-                                break
-                            sha1.update(data)
-                            md5.update(data)
-                    if not (dsf_cache_data[dsf]["md5"] == md5.hexdigest() and dsf_cache_data[dsf]["sha1"] == sha1.hexdigest()):
-                        if self.verbose >= 2:
-                            print(f"  [W] SortPacks mesh_dsf_cache: hash of cached dsf '{str(dsf_path)}' doesn't match")
+                    md5hex, sha1hex = self.hash_file(dsf_path)
+                    if not (dsf_cache_data[dsf]["md5"] == md5hex and dsf_cache_data[dsf]["sha1"] == sha1hex):
+                        log.debug(f"SortPacks mesh_dsf_cache: hash of cached dsf '{dsf_path}' doesn't match")
                         del dsf_cache_data[dsf]
                         continue
                     # Attempt to get the tag data requested
@@ -399,8 +388,7 @@ class SortPacks:
                         pass
             # Safety net
             except Exception as e:
-                if self.verbose >= 2:
-                    print(f"  [E] SortPacks mesh_dsf_cache: unhandled error '{e}'")
+                log.debug(f"SortPacks mesh_dsf_cache: unhandled error '{e}'")
                 dsf_cache_data = {"version": 220}
 
     # Select and read DSF. Uncompress if needed and call mesh_dsf_decode()
@@ -417,8 +405,7 @@ class SortPacks:
             if re.search(r"[+-]\d{2}[+-]\d{3}", dir):
                 tile_dir.append(dir)
         if not tile_dir:
-            if self.verbose >= 2:
-                print(f"  [E] SortPacks mesh_dsf_read: earth nav dir is empty - '{end_directory}'")
+            log.debug(f"SortPacks mesh_dsf_read: earth nav dir is empty - '{end_directory}'")
             return "ERR: READ: NDirEmpty"
         # Going one tile at a time, attempt to extract a dsf from the tile
         dsf_data = None
@@ -436,19 +423,16 @@ class SortPacks:
                 if data_flag:
                     continue
                 # If not, proceed to parse the DSF
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks mesh_dsf_read: extracting '{end_directory / tile / dsf}'")
+                log.debug(f"SortPacks mesh_dsf_read: extracting '{end_directory / tile / dsf}'")
                 # Attempt to extract this DSF
                 try:
                     extract_dir = self.temp_path / dirname / dsf[:-4]
                     shutil.unpack_archive(end_directory / tile / dsf, extract_dir)
-                    if self.verbose >= 2:
-                        print(f"  [I] SortPacks mesh_dsf_read: extracted")
+                    log.debug("SortPacks mesh_dsf_read: extracted")
                     # A valid compressed DSF archive holds exactly one member
                     extracted = self.misc_functions.dir_list(extract_dir, "files")
                     if len(extracted) != 1:
-                        if self.verbose >= 2:
-                            print(f"  [E] SortPacks mesh_dsf_read: 7z archive has too many files! skipping")
+                        log.debug("SortPacks mesh_dsf_read: 7z archive has too many files! skipping")
                     else:
                         uncomp_path = extract_dir / (dsf if dsf in extracted else extracted[0])
                         data_flag = 2
@@ -458,22 +442,19 @@ class SortPacks:
                     # ...and the exception was in py7zr, it was probably uncompressed already
                     if isinstance(e, py7zr.exceptions.Bad7zFile) or isinstance(e, shutil.ReadError):
                         data_flag = 1
-                        if self.verbose >= 2:
-                            print(f"  [I] SortPacks mesh_dsf_read: not a 7z archive. working on dsf directly")
+                        log.debug("SortPacks mesh_dsf_read: not a 7z archive. working on dsf directly")
                     # Otherwise, hit the safety net
                     else:
                         self.dsferror_registry.append([f"{dsf}' in '{end_directory.parent.absolute()}", "ERR: READ: MiscError"])
                         data_flag = 0
-                        if self.verbose >= 2:
-                            print(f"  [E] SortPacks mesh_dsf_read: unhandled error '{e}'. working on dsf directly")
+                        log.debug(f"SortPacks mesh_dsf_read: unhandled error '{e}'. working on dsf directly")
                 # Now attempt to decode this DSF
                 dsf_data = self.mesh_dsf_decode(uncomp_path)
                 # If it returns an error, try the next one. Else, declare the final tile and dsf
                 if str(dsf_data).startswith("ERR: ") or dsf_data is None:
                     self.dsferror_registry.append([f"{dsf} in {end_directory.parent.absolute()}", dsf_data])
                     data_flag = 0
-                    if self.verbose >= 2:
-                        print(f"  [W] SortPacks mesh_dsf_read: caught '{str(dsf_data)}' from mesh_dsf_decode")
+                    log.debug(f"SortPacks mesh_dsf_read: caught '{dsf_data}' from mesh_dsf_decode")
                 else:
                     final_tile = tile
                     final_dsf = dsf
@@ -484,8 +465,7 @@ class SortPacks:
             return dsf_read_result
         # If data_flag was never set, it means we couldn't read a dsf
         elif not data_flag:
-            if self.verbose >= 2:
-                print(f"  [E] SortPacks mesh_dsf_read: data flag never set, ie. no dsf could be read")
+            log.debug("SortPacks mesh_dsf_read: data flag never set, ie. no dsf could be read")
             return "ERR: READ: TileEmpty"
         # Search for sim/overlay in HEAD atom. If found, update cache and store result
         if tag == "sim/overlay 1":
@@ -501,8 +481,7 @@ class SortPacks:
             # Return result
             return overlay
         else:
-            if self.verbose >= 2:
-                print(f"  [E] SortPacks mesh_dsf_read: unspecified or unimplemented property to search - '{str(tag)}'")
+            log.debug(f"SortPacks mesh_dsf_read: unspecified or unimplemented property to search - '{tag}'")
             return "ERR: READ: NoSpecify"
 
     # Check if the pack is an airport
@@ -511,23 +490,20 @@ class SortPacks:
         # Basic checks before we move further
         apt_path = self.misc_functions.dir_contains(dirpath, None, "apt.dat")
         if not apt_path:
-            if self.verbose >= 2:
-                print("  [I] SortPacks process_type_apt: 'apt.dat' file not found")
+            log.debug("SortPacks process_type_apt: 'apt.dat' file not found")
             return
         # Attempt several codecs starting with utf-8 in case of obscure apt.dat files
         apt_lins = None
         for codec in ("utf-8", "charmap", "cp1252", "cp850"):
             try:
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_type_apt: reading apt.dat with '{codec}'")
+                log.debug(f"SortPacks process_type_apt: reading apt.dat with '{codec}'")
                 with open(apt_path, "r", encoding=codec) as apt_file:
                     apt_lins = apt_file.readlines()
                 break
             except UnicodeDecodeError:
                 pass
         else:
-            if self.verbose >= 2:
-                print(f"  [W] SortPacks process_type_apt: all codecs errored out")
+            log.debug("SortPacks process_type_apt: all codecs errored out")
         # Loop through lines
         apt_type = None
         for line in apt_lins:
@@ -540,13 +516,11 @@ class SortPacks:
                     break
                 elif self.misc_functions.str_contains(dirname, ["Demo Area", "X-Plane Airports", "X-Plane Landmarks", "Aerosoft"]):
                     apt_type = "Default"
-                    if self.verbose >= 2:
-                        print("  [I] SortPacks process_type_apt: found to be default airport")
+                    log.debug("SortPacks process_type_apt: found to be default airport")
                     break
                 if apt_path and dirname == "Global Airports":
                     apt_type = "Global"
-                    if self.verbose >= 2:
-                        print("  [I] SortPacks process_type_apt: found to be global airport")
+                    log.debug("SortPacks process_type_apt: found to be global airport")
                     break
                 # Must be custom
                 else:
@@ -576,14 +550,12 @@ class SortPacks:
         end_path = self.misc_functions.dir_contains(dirpath, None, "Earth nav data")
         # Basic check
         if not end_path:
-            if self.verbose >= 2:
-                print("  [I] SortPacks process_type_mesh: 'Earth nav data' folder not found")
+            log.debug("SortPacks process_type_mesh: 'Earth nav data' folder not found")
             return
         # Read DSF and check for sim/overlay. If error or None returned, log in dsf error registry
         overlay = self.mesh_dsf_read(end_path, "sim/overlay 1", dirname)
         if str(overlay).startswith("ERR: ") or overlay is None:
-            if self.verbose >= 2:
-                print(f"  [W] SortPacks process_type_mesh: caught '{str(overlay)}' from mesh_dsf_read")
+            log.debug(f"SortPacks process_type_mesh: caught '{overlay}' from mesh_dsf_read")
             self.dsferror_registry.append([dirpath, overlay])
             return
         # Check for AutoOrtho and SimHeaven quirks
@@ -617,10 +589,10 @@ class SortPacks:
                 other_result = other_simheaven
         if self.misc_functions.dir_contains(dirpath, ["plugins"]):
             other_result = "Plugin"
-        if self.verbose >= 2 and other_result:
-            print(f"  [I] SortPacks process_type_other: found to be {other_result}")
-        elif self.verbose >= 2:
-            print(f"  [I] SortPacks process_type_other: neither library.txt nor plugins folder found")
+        if other_result:
+            log.debug(f"SortPacks process_type_other: found to be {other_result}")
+        else:
+            log.debug("SortPacks process_type_other: neither library.txt nor plugins folder found")
         return other_result
 
     # Check if the pack is from AutoOrtho
@@ -634,8 +606,8 @@ class SortPacks:
             ao_result = "AO Region"
         elif self.misc_functions.str_contains(dirname, ["z_autoortho"]):
             ao_result = "AO Root"
-        if self.verbose >= 2 and ao_result:
-            print(f"    [I] SortPacks process_quirk_ao: found to be {ao_result}")
+        if ao_result:
+            log.debug(f"SortPacks process_quirk_ao: found to be {ao_result}")
         return ao_result
 
     # Check if the pack is a Prefab Airport
@@ -644,8 +616,8 @@ class SortPacks:
         prefab_result = None
         if self.misc_functions.str_contains(dirname, ["prefab"], casesensitive=False):
             prefab_result = "Prefab Apt"
-        if self.verbose >= 2 and prefab_result:
-            print(f"    [I] SortPacks process_quirk_prefab: found to be {prefab_result}")
+        if prefab_result:
+            log.debug(f"SortPacks process_quirk_prefab: found to be {prefab_result}")
         return prefab_result
 
     # Check if the pack is from SimHeaven
@@ -654,8 +626,8 @@ class SortPacks:
         simheaven_result = None
         if self.misc_functions.str_contains(dirname, ["simheaven"], casesensitive=False):
             simheaven_result = "SimHeaven"
-        if self.verbose >= 2 and simheaven_result:
-            print(f"    [I] SortPacks process_quirk_simheaven: found to be {simheaven_result}")
+        if simheaven_result:
+            log.debug(f"SortPacks process_quirk_simheaven: found to be {simheaven_result}")
         return simheaven_result
 
     # Classify the pack
@@ -692,13 +664,11 @@ class SortPacks:
             # Standard definitions
             if pack_type in ["Global", "Default", "Custom"]:
                 self.airports[pack_type].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as '{pack_type} Airport'")
+                log.debug(f"SortPacks process_main: classified as '{pack_type} Airport'")
             # Quirk handling
             elif pack_type in ["Prefab Apt"]:
                 self.quirks[pack_type].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as quirk '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as quirk '{pack_type}'")
             else:
                 classified = False
         # Next, autortho, overlay, ortho or mesh
@@ -710,17 +680,14 @@ class SortPacks:
             # Standard definitions
             if pack_type in ["Default Overlay", "Custom Overlay"]:
                 self.overlays[pack_type[:-8]].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as '{pack_type}'")
             elif pack_type in ["Ortho Mesh", "Terrain Mesh"]:
                 self.meshes[pack_type[:-5]].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as '{pack_type}'")
             # Quirk handling
             elif pack_type in ["AO Overlay", "AO Region", "AO Root", "SimHeaven"]:
                 self.quirks[pack_type].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as quirk '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as quirk '{pack_type}'")
             else:
                 classified = False
         # Very lax checks for plugins and libraries
@@ -730,19 +697,16 @@ class SortPacks:
             # Standard definitions
             if pack_type in ["Plugin", "Library"]:
                 self.other[pack_type].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as '{pack_type}'")
             # Quirk handling
             elif pack_type in ["SimHeaven"]:
                 self.quirks[pack_type].append(line)
-                if self.verbose >= 2:
-                    print(f"  [I] SortPacks process_main: classified as quirk '{pack_type}'")
+                log.debug(f"SortPacks process_main: classified as quirk '{pack_type}'")
             else:
                 classified = False
         # Give up. Add this to the list of packs we couldn't sort
         if not classified:
-            if self.verbose >= 2:
-                print(f"  [W] SortPacks process_main: could not be classified")
+            log.debug("SortPacks process_main: could not be classified")
             if line.startswith(FILE_DISAB_LINE_ABS):
                 self.unsorted_registry.append(line[22:])
             elif line.startswith(FILE_LINE_ABS):
@@ -756,19 +720,15 @@ class SortPacks:
         folder_list = self.misc_functions.dir_list(self.xplane_path / "Custom Scenery", "dirs")
         folder_list.sort()
         for directory in folder_list:
-            if self.verbose >= 1:
-                print(f"Main: Starting dir: {directory}")
+            if log.isEnabledFor(logging.INFO):
+                log.info(f"Main: Starting dir: {directory}")
             else:
-                # Whitespace padding to print in the shell
+                # Live progress display: overwrite the same shell line each time
                 progress_str = f"Processing: {directory}"
-                if len(progress_str) <= maxlength:
-                    progress_str = f"{progress_str}{' ' * (maxlength - len(progress_str))}"
-                else:
-                    maxlength = len(progress_str)
-                print(f"\r{progress_str}", end="\r")
+                maxlength = max(maxlength, len(progress_str))
+                print(f"\r{progress_str.ljust(maxlength)}", end="\r")
             self.process_main(directory)
-            if self.verbose >= 1 and self.verbose < 2:
-                print(f"Main: Finished dir: {directory}")
+            log.info(f"Main: Finished dir: {directory}")
 
     # Process Windows Shortcuts
     def main_shortcuts(self) -> None:
@@ -790,30 +750,23 @@ class SortPacks:
             try:
                 folder_path = self.misc_functions.parse_shortcut(shtcut_path)
                 if folder_path.exists():
-                    if self.verbose >= 1:
-                        print(f"Main: Starting shortcut: {folder_path}")
+                    if log.isEnabledFor(logging.INFO):
+                        log.info(f"Main: Starting shortcut: {folder_path}")
                     else:
-                        # Whitespace padding to print in the shell
-                        progress_str = f"Processing shortcut: {str(folder_path)}"
-                        if len(progress_str) <= maxlength:
-                            progress_str = f"{progress_str}{' ' * (maxlength - len(progress_str))}"
-                        else:
-                            maxlength = len(progress_str)
-                        print(f"\r{progress_str}", end="\r")
+                        # Live progress display: overwrite the same shell line each time
+                        progress_str = f"Processing shortcut: {folder_path}"
+                        maxlength = max(maxlength, len(progress_str))
+                        print(f"\r{progress_str.ljust(maxlength)}", end="\r")
                         printed = True
                     self.process_main(folder_path, shortcut=True)
-                    if self.verbose >= 1 and self.verbose < 2:
-                        print(f"Main: Finished shortcut: {folder_path}")
+                    log.info(f"Main: Finished shortcut: {folder_path}")
                     continue
                 else:
-                    if self.verbose >= 1:
-                        print(f"Main: Failed shortcut: {folder_path}")
+                    log.info(f"Main: Failed shortcut: {folder_path}")
             # Safety net
             except Exception as e:
-                if self.verbose >= 2:
-                    print(f"  [E] SortPacks main_shortcuts: unhandled error '{e}'")
-                if self.verbose >= 1:
-                    print(f"Main: Failed shortcut: {shtcut_path}")
+                log.debug(f"SortPacks main_shortcuts: unhandled error '{e}'")
+                log.info(f"Main: Failed shortcut: {shtcut_path}")
             self.unparsed_registry.append(shtcut_path)
         if printed:
             print()
@@ -835,8 +788,7 @@ class SortPacks:
                 if ali_target and ali_target.exists():
                     ali_list.append((file_path, ali_target))
             except Exception as e:
-                if self.verbose >= 2:
-                    print(f"  [E] SortPacks main_aliases: unhandled error '{e}'")
+                log.debug(f"SortPacks main_aliases: unhandled error '{e}'")
                 self.unparsed_registry.append(file_path)
         if ali_list and sys.platform != "darwin":
             print(f"I found macOS aliases, but I'm not on macOS! Detected platform: {sys.platform}")
@@ -846,28 +798,22 @@ class SortPacks:
         for ali_path, target_path in ali_list:
             try:
                 if target_path.exists():
-                    if self.verbose >= 1:
-                        print(f"Main: Starting alias: {target_path}")
+                    if log.isEnabledFor(logging.INFO):
+                        log.info(f"Main: Starting alias: {target_path}")
                     else:
-                        progress_str = f"Processing alias: {str(target_path)}"
-                        if len(progress_str) <= maxlength:
-                            progress_str = f"{progress_str}{' ' * (maxlength - len(progress_str))}"
-                        else:
-                            maxlength = len(progress_str)
-                        print(f"\r{progress_str}", end="\r")
+                        # Live progress display: overwrite the same shell line each time
+                        progress_str = f"Processing alias: {target_path}"
+                        maxlength = max(maxlength, len(progress_str))
+                        print(f"\r{progress_str.ljust(maxlength)}", end="\r")
                         printed = True
                     self.process_main(target_path, shortcut=True)
-                    if self.verbose >= 1 and self.verbose < 2:
-                        print(f"Main: Finished alias: {target_path}")
+                    log.info(f"Main: Finished alias: {target_path}")
                 else:
-                    if self.verbose >= 1:
-                        print(f"Main: Failed alias (target does not exist): {target_path}")
+                    log.info(f"Main: Failed alias (target does not exist): {target_path}")
                     self.unparsed_registry.append(ali_path)
             except Exception as e:
-                if self.verbose >= 2:
-                    print(f"  [E] SortPacks main_aliases: unhandled error '{e}'")
-                if self.verbose >= 1:
-                    print(f"Main: Failed alias: {ali_path}")
+                log.debug(f"SortPacks main_aliases: unhandled error '{e}'")
+                log.info(f"Main: Failed alias: {ali_path}")
                 self.unparsed_registry.append(ali_path)
         if printed:
             print()
@@ -888,19 +834,18 @@ class SortPacks:
             self.other[key].sort()
         # Check to inject XP12 Global Airports
         if not self.airports["Global"]:
-            if self.verbose >= 1:
-                print("  [I] SortPacks main_cleanup: XP10/11 global airports not found, injecting XP12 entry")
+            log.info("SortPacks main_cleanup: XP10/11 global airports not found, injecting XP12 entry")
             self.airports["Global"].append(XP12_GLOBAL_AIRPORTS)
 
     # Display scary lists for the user
     def main_display(self) -> None:
         # Display all packs that errored when reading DSFs (if verbose)
-        if self.dsferror_registry and self.verbose >= 1:
-            print("\n[W] Main: I was unable to read DSF files from some scenery packs. Please check if they load correctly in X-Plane.")
-            print("[^] Main: This does not necessarily mean that the pack could not be classified. Such packs will be listed separately.")
-            print("[^] Main: I will list them out now with the error type.")
+        if self.dsferror_registry:
+            log.info("Main: I was unable to read DSF files from some scenery packs. Please check if they load correctly in X-Plane.")
+            log.info("Main: This does not necessarily mean that the pack could not be classified. Such packs will be listed separately.")
+            log.info("Main: I will list them out now with the error type.")
             for dsffail in self.dsferror_registry:
-                print(f"[^]   {dsffail[1]} in '{dsffail[0]}'")
+                log.info(f"  {dsffail[1]} in '{dsffail[0]}'")
         # Display all disabled packs that couldn't be found
         if self.disable_registry:
             print("\nI was unable to find some packs that were tagged DISABLED in the old scenery_packs.ini.")
@@ -943,9 +888,7 @@ class SortPacks:
 
 
 class OverlapResolve:
-    def __init__(self, verbose: int, sort_result: SortPacksResult, airport_data=AirportData) -> None:
-        # External variable declarations
-        self.verbose = verbose
+    def __init__(self, sort_result: SortPacksResult, airport_data=AirportData) -> None:
         # Copy of sort result
         self.sort_result = sort_result
         # External Airport related declarations
@@ -988,15 +931,10 @@ class OverlapResolve:
             # Check if this airport's ICAOs are among the conflicting ones. If not, skip it
             airport_icaos_conflicting = list(set(airport_icaos) & set(self.icao_overlaps))
             airport_icaos_conflicting.sort()
-            if airport_icaos_conflicting:
-                pass
-            else:
+            if not airport_icaos_conflicting:
                 continue
             # Print path and ICAOs
-            airport_icao_string = ""
-            for icao in airport_icaos_conflicting:
-                airport_icao_string += f"{icao} "
-            print(f"    {self.airport_list_num}: '{airport_path}': {airport_icao_string[:-1]}")
+            print(f"    {self.airport_list_num}: '{airport_path}': {' '.join(airport_icaos_conflicting)}")
             # Log this with the number in list
             self.airport_list[self.airport_list_num] = airport_line
             # Incremenent i for the next pack
@@ -1036,7 +974,7 @@ class OverlapResolve:
             try:
                 order = order.strip(" ").split(",")
                 order[:] = [int(item) for item in order if item != ""]
-            except:
+            except ValueError:
                 print("    I couldn't read this input!")
                 valid_flag = False
             # Check if all the packs shown are present in this input
@@ -1047,10 +985,7 @@ class OverlapResolve:
             if not valid_flag:
                 print("    I recommend you read the instructions if you're not sure what to do.")
                 print("    For now though, I will show a basic example for your case below.")
-                example_str = ""
-                for i in range(self.airport_list_num):
-                    example_str += f"{i},"
-                print(f"    {example_str[:-1]}")
+                print(f"    {','.join(str(i) for i in range(self.airport_list_num))}")
                 print("    You can copy-paste this as-is, or move the numbers around as you like.")
             # If this input's valid, move on
             else:
@@ -1065,9 +1000,8 @@ class OverlapResolve:
 
 
 class WriteINI:
-    def __init__(self, verbose: int, xplane_path: pathlib.Path, sort_result: SortPacksResult) -> None:
+    def __init__(self, xplane_path: pathlib.Path, sort_result: SortPacksResult) -> None:
         # External variable declarations
-        self.verbose = verbose
         self.xplane_path = xplane_path
         self.unsorted_registry = sort_result.unsorted_registry
         self.quirks = sort_result.quirks
@@ -1139,25 +1073,20 @@ class WriteINI:
         # Write everything to scenery_packs.ini
         with open(self.ini_path_deployed, "w+", encoding="utf-8") as f:
             f.write(FILE_BEGIN)
-            for pack_type in packs:
-                pack_list = packs[pack_type]
-                if pack_list and self.verbose >= 1:
-                    print(pack_type)
+            for pack_type, pack_list in packs.items():
+                log.info(pack_type)
+                if pack_list:
                     f.writelines(pack_list)
                     for pack in pack_list:
-                        print(f"    {pack.strip()}")
-                elif self.verbose >= 1:
-                    print(pack_type)
-                    print(f"    --empty--")
-                elif pack_list:
-                    f.writelines(pack_list)
+                        log.info(f"    {pack.strip()}")
+                else:
+                    log.info("    --empty--")
         print("Done!")
 
 
 class LaunchXPlane:
-    def __init__(self, verbose: int, xplane_path: pathlib.Path) -> None:
+    def __init__(self, xplane_path: pathlib.Path) -> None:
         # External variable declarations
-        self.verbose = verbose
         self.xplane_path = xplane_path
 
     # Get, set, go
@@ -1195,16 +1124,12 @@ class LaunchXPlane:
         # Launch X-Plane
         print("\n\n")
         if sys.platform in ["win32", "linux"]:
-            os.system(f'"{str(xplane_exe)}"')
+            subprocess.run([str(xplane_exe)])
         elif sys.platform == "darwin":
-            os.system(f'open -a "{str(xplane_exe)}"')
+            subprocess.run(["open", "-a", str(xplane_exe)])
 
 
 class misc_functions:
-    def __init__(self, verbose: int) -> None:
-        # External variable declarations
-        self.verbose = verbose
-
     # Parse Windows shortcuts
     # The non-Windows code is from https://gist.github.com/Winand/997ed38269e899eb561991a0c663fa49
     def parse_shortcut(self, sht_path: str) -> pathlib.Path:
@@ -1213,8 +1138,7 @@ class misc_functions:
             shell = win32com.client.Dispatch("WScript.Shell")
             tgt_path = shell.CreateShortCut(sht_path).Targetpath
         else:
-            if self.verbose >= 1:
-                print(f"  [W] misc_functions parse_shortcut: not on Windows but made to parse {sht_path}")
+            log.info(f"misc_functions parse_shortcut: not on Windows but made to parse {sht_path}")
             with open(sht_path, "rb") as stream:
                 content = stream.read()
                 lflags = struct.unpack("I", content[0x14:0x18])[0]
@@ -1239,8 +1163,7 @@ class misc_functions:
                 alias_url = Cocoa.NSURL.fileURLWithPath_(ali_path)
                 bookmark_data, error = Cocoa.NSURL.bookmarkDataWithContentsOfURL_error_(alias_url, None)
                 if error:
-                    if self.verbose >= 1:
-                        print(f"  [E] Failed to read bookmark data: {ali_path}, error: {error.localizedDescription()}")
+                    log.info(f"Failed to read bookmark data: {ali_path}, error: {error.localizedDescription()}")
                     return None
                 resolved_url, stale, error = Cocoa.NSURL.URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error_(
                     bookmark_data,
@@ -1250,17 +1173,14 @@ class misc_functions:
                     None
                 )
                 if error:
-                    if self.verbose >= 1:
-                        print(f"  [E] parse_alias: failed to resolve alias: {ali_path}, error: {error.localizedDescription()}")
+                    log.info(f"parse_alias: failed to resolve alias: {ali_path}, error: {error.localizedDescription()}")
                     return None
                 return pathlib.Path(resolved_url.path())
             except Exception as e:
-                if self.verbose >= 1:
-                    print(f"  [E] parse_alias: exception while resolving alias: {ali_path}, error: {e}")
+                log.info(f"parse_alias: exception while resolving alias: {ali_path}, error: {e}")
                 return None
         else:
-            if self.verbose >= 1:
-                print(f"  [W] parse_alias: not on macOS but made to parse {ali_path}")
+            log.info(f"parse_alias: not on macOS but made to parse {ali_path}")
             return None
 
     # Get the list of all directories inside a parent directory
@@ -1317,19 +1237,19 @@ class misc_functions:
         return False
 
 
-# Pack importing
-def __init__() -> None:
+# Register the 7z unpacker used for compressed DSFs, then greet the user
+def initialise() -> None:
     shutil.register_unpack_format("7zip", [".7z", ".dsf"], py7zr.unpack_7zarchive)
     print(f"Scenery Pack Organiser: version {__version__}")
 
 
 # Main flow
-def main_flow(verbose: int, temp_path: pathlib.Path) -> int:
+def main_flow(temp_path: pathlib.Path) -> int:
     # Part 1: Locate X-Plane
     time.sleep(2)
     print("\nFirst, let's find X-Plane!\n")
     time.sleep(2)
-    part1 = LocateXPlane(verbose)
+    part1 = LocateXPlane()
     xplane_path = part1.main()
 
     # Part 2: Sort packs and get data required for Part 3
@@ -1337,13 +1257,13 @@ def main_flow(verbose: int, temp_path: pathlib.Path) -> int:
     print("\n\nCool!")
     time.sleep(2)
     print("\nNow hang tight while I go through your scenery packs...\n")
-    part2 = SortPacks(verbose, xplane_path, temp_path)
+    part2 = SortPacks(xplane_path, temp_path)
     sort_result, airport_data = part2.main()
 
     # Part 3: Resolve overlaps in Airports
     print("\n\nNow that that's done, let's see if you have any overlapping airports!\n")
     time.sleep(2)
-    part3 = OverlapResolve(verbose, sort_result, airport_data)
+    part3 = OverlapResolve(sort_result, airport_data)
     sort_result = part3.main()
 
     # Part 4: Write the ini and store any exceptions encountered
@@ -1352,14 +1272,14 @@ def main_flow(verbose: int, temp_path: pathlib.Path) -> int:
     time.sleep(2)
     print("\nNow I'll write all this to the .ini!\n")
     time.sleep(2)
-    part4 = WriteINI(verbose, xplane_path, sort_result)
+    part4 = WriteINI(xplane_path, sort_result)
     ini_error = part4.main()
 
     # Part 5: Launch X-Plane ONLY IF no errors in Part 4
     time.sleep(2)
     print("\n\nLast... launching X-Plane!\n")
     time.sleep(2)
-    part5 = LaunchXPlane(verbose, xplane_path)
+    part5 = LaunchXPlane(xplane_path)
     if ini_error:
         return 255
     else:
@@ -1521,15 +1441,14 @@ def main() -> int:
         return 0
 
     args = build_parser().parse_args()
-    verbose_level = args.verbose_level
+    configure_logging(args.verbose_level)
 
-    __init__()
+    initialise()
 
     # create a temporary directory using the context manager
     with tempfile.TemporaryDirectory() as tmpdirname:
-        if verbose_level >= 1:
-            print("created temporary directory", tmpdirname)
-        return_code = main_flow(verbose_level, pathlib.Path(tmpdirname))
+        log.info(f"created temporary directory {tmpdirname}")
+        return_code = main_flow(pathlib.Path(tmpdirname))
     # temporary directory and contents have been removed
     return return_code
 
