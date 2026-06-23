@@ -1,4 +1,4 @@
-# Scenery Pack Organiser - XP10/11/12 v3.1r1
+# Scenery Pack Organiser - XP10/11/12 v3.2r1
 
 Are you tired of sifting through all the packs in the Custom Scenery folder and reordering them manually? Do you hate having to start and quit X-Plane just to add new scenery packs to the file so you can organise it? This utility is for you!
 
@@ -21,7 +21,7 @@ Download the binary for your OS from the [Releases](https://github.com/iy4vet/xp
 
 On Windows, just double-click the `.exe`. On macOS/Linux you may need to make it executable first:
 
-```bash
+```sh
 # Example (Linux):
 chmod +x organiser-linux-x64
 ./organiser-linux-x64
@@ -31,12 +31,12 @@ chmod +x organiser-linux-x64
 
 Requires Python 3.10+. Install dependencies and run:
 
-```bash
+```sh
 pip install -r requirements.txt
 python organiser.py
 ```
 
-> **Tip:** If the program crashes, re-run with `--verbose 1` or `--verbose 2` for debugging output.
+> **Tip:** If the program crashes or if you get unexpected results, re-run with `--verbose 1` or `--verbose 2` for debugging!
 
 ## Usage
 
@@ -75,7 +75,7 @@ The program is interactive - it will guide you through each step:
 
 ## Credits and Licensing
 
-This project is licensed under the GNU GPL v2.
+This project is licensed under the GNU GPL v3.
 
 Any contributions (features or bugfixes) are very welcome :grin:. [Here's the project GitHub](https://github.com/iy4vet/xplane-scenery-pack-organiser). Feel free to message me on Discord - my username is `iy4vet`. I'm also present in the X-Plane Community and Official servers.
 
@@ -90,11 +90,12 @@ A huge thank-you to these awesome people:
 
 ## Changelog
 
+- **3.2r1** - Fix: 7z-compressed DSF can have any internal filename (eg. o4xp_2_xp12 output)
 - **3.1r1** - Add: macOS alias parsing. Add: CI/CD pipeline with 6-platform binary builds. Fix: disabled pack import. Update: all dependencies for Windows ARM64 compatibility.
 - **3.0r1** - Fix: `shutil` compatibility issue.
-- **3.0a3** - Add: SimHeaven quirk handling. Improve: UI spacing and stage delays.
-- **3.0a2** - Add: `argparse` CLI. Refactor: programme flow and main function structure.
-- **3.0a1** - Refactor: full codebase rewrite with classes for flexibility and readability.
+- **3.0b3** - Add: SimHeaven quirk handling. Improve: UI spacing and stage delays.
+- **3.0b2** - Add: `argparse` CLI. Refactor: programme flow and main function structure.
+- **3.0b1** - Refactor: full codebase rewrite with classes for flexibility and readability.
 - **2.2r1** - Add: shebang for double-click execution on Unix.
 - **2.2b2** - Add: DSF parse result caching for faster repeat runs.
 - **2.2b1** - Rewrite: airport overlap detection system. Fix: minor bugs.

@@ -433,11 +433,18 @@ class SortPacks:
                     print(f"  [I] SortPacks mesh_dsf_read: extracting '{end_directory / tile / dsf}'")
                 # Attempt to extract this DSF
                 try:
-                    shutil.unpack_archive(end_directory / tile / dsf, self.temp_path / dirname / dsf[:-4])
-                    uncomp_path = self.temp_path / dirname / dsf[:-4] / dsf
-                    data_flag = 2
+                    extract_dir = self.temp_path / dirname / dsf[:-4]
+                    shutil.unpack_archive(end_directory / tile / dsf, extract_dir)
                     if self.verbose >= 2:
                         print(f"  [I] SortPacks mesh_dsf_read: extracted")
+                    # A valid compressed DSF archive holds exactly one member
+                    extracted = self.misc_functions.dir_list(extract_dir, "files")
+                    if len(extracted) != 1:
+                        if self.verbose >= 2:
+                            print(f"  [E] SortPacks mesh_dsf_read: 7z archive has too many files! skipping")
+                    else:
+                        uncomp_path = extract_dir / (dsf if dsf in extracted else extracted[0])
+                        data_flag = 2
                 # If we ran into an exception...
                 except Exception as e:
                     uncomp_path = end_directory / tile / dsf
