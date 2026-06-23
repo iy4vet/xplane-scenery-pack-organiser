@@ -30,7 +30,7 @@ if sys.platform == "darwin":
     import Cocoa
 
 # Version
-__version__ = "3.2r2"
+__version__ = "3.2r3"
 
 # Module logger
 log = logging.getLogger("organiser")
