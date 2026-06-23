@@ -8,8 +8,10 @@ import locale
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,7 +28,12 @@ if sys.platform == "win32":
 if sys.platform == "darwin":
     import Cocoa
 
+# Version
+__version__ = "3.2r2"
+
 # Global constant declarations
+# Environment marker set when we re-launch ourselves inside a terminal emulator
+RELAUNCH_ENV_MARKER = "SPORGANISER_IN_TERMINAL"
 XP10_GLOBAL_AIRPORTS = "SCENERY_PACK Custom Scenery/Global Airports/\n"
 XP12_GLOBAL_AIRPORTS = "SCENERY_PACK *GLOBAL_AIRPORTS*\n"
 FILE_LINE_REL = "SCENERY_PACK Custom Scenery/"
@@ -1313,7 +1320,7 @@ class misc_functions:
 # Pack importing
 def __init__() -> None:
     shutil.register_unpack_format("7zip", [".7z", ".dsf"], py7zr.unpack_7zarchive)
-    print("Scenery Pack Organiser: version 3.1r1")
+    print(f"Scenery Pack Organiser: version {__version__}")
 
 
 # Main flow
@@ -1359,17 +1366,164 @@ def main_flow(verbose: int, temp_path: pathlib.Path) -> int:
         part5.main()
         return 0
 
+# Re-launch ourselves inside a terminal emulator when started without one
+def relaunch_in_terminal() -> bool:
+    """If the built binary was double-clicked from a graphical file manager (so
+    there's no controlling terminal), re-launch it inside a terminal emulator so
+    the interactive prompts are actually visible.
+
+    Returns True if a re-launch was started (the caller should then exit),
+    False if we should just carry on in the current process.
+    """
+    # Only the frozen Linux binary needs this. On Windows the .exe already opens
+    # a console, on macOS the app is launched differently, and running from
+    # source (python organiser.py) is always done from a terminal already.
+    if sys.platform != "linux" or not getattr(sys, "frozen", False):
+        return False
+    # Guard against an infinite relaunch loop
+    if os.environ.get(RELAUNCH_ENV_MARKER) == "1":
+        return False
+    # If we already have an interactive terminal, there's nothing to do
+    try:
+        if sys.stdin is not None and sys.stdin.isatty():
+            return False
+    except (ValueError, OSError):
+        pass
+
+    # The command that re-runs this program, carrying over any CLI arguments
+    program_cmd = [sys.executable] + sys.argv[1:]
+    quoted = " ".join(shlex.quote(part) for part in program_cmd)
+    # Run ourselves; if we exit with an error (or crash), pause so the window
+    # stays open for the user to read it. On a normal exit the program has
+    # already prompted before finishing, so we don't pause again here.
+    inner_cmd = (
+        f'{quoted}; ec=$?; '
+        f'if [ "$ec" -ne 0 ]; then echo; printf "Press Enter to close this window..."; read _; fi'
+    )
+
+    # Terminal emulators vary in how they take a command to run. The trailing
+    # flag is the one that means "run the rest of this as a command".
+    candidates = []
+    env_terminal = os.environ.get("TERMINAL")
+    if env_terminal:
+        candidates.append((env_terminal, "-e"))
+    candidates += [
+        ("x-terminal-emulator", "-e"),  # Debian/Ubuntu alternatives default
+        ("gnome-terminal", "--"),
+        ("konsole", "-e"),
+        ("xfce4-terminal", "-x"),
+        ("mate-terminal", "-x"),
+        ("tilix", "-e"),
+        ("kitty", "-e"),
+        ("alacritty", "-e"),
+        ("xterm", "-e"),
+    ]
+
+    child_env = dict(os.environ, **{RELAUNCH_ENV_MARKER: "1"})
+    for terminal, flag in candidates:
+        terminal_path = shutil.which(terminal)
+        if not terminal_path:
+            continue
+        argv = [terminal_path, flag, "sh", "-c", inner_cmd]
+        try:
+            subprocess.Popen(argv, env=child_env)
+            return True
+        except OSError:
+            continue
+
+    # No terminal emulator found; fall through and run in the current process.
+    # If there really is no usable terminal the interactive prompts will fail,
+    # but that's no worse than before.
+    return False
+
+
+# Build the command-line argument parser
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="organiser",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Scenery Pack Organiser for X-Plane 10 / 11 / 12.\n\n"
+            "Scans your X-Plane 'Custom Scenery' folder, classifies every scenery\n"
+            "pack (custom & default airports, overlays, meshes, orthophotos,\n"
+            "libraries, plugins and more), resolves overlapping airports, and writes\n"
+            "a correctly ordered 'scenery_packs.ini'. Your existing file is backed up\n"
+            "to 'scenery_packs.ini.bak' first."
+        ),
+        epilog=(
+            "The program is interactive: run it with no arguments and follow the\n"
+            "on-screen prompts.\n"
+            "\n"
+            "Examples:\n"
+            "  organiser                Run normally (recommended for most users)\n"
+            "  organiser -v             Run with extra informational output\n"
+            "  organiser --verbose 2    Run with full debug output\n"
+            "\n"
+            "Project page: https://github.com/iy4vet/xplane-scenery-pack-organiser"
+        ),
+    )
+    parser.add_argument(
+        "-v", "-d", "--verbose",
+        dest="verbose_level",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        choices=[0, 1, 2],
+        metavar="{0,1,2}",
+        help=(
+            "verbosity level: 0 = normal output (default), 1 = extra info, "
+            "2 = full debug. '-v' on its own is the same as '-v 1'."
+        ),
+    )
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    return parser
+
+
+# Keep the window open on platforms/launch-methods where it would otherwise
+# vanish before the user can read the final output (chiefly a Windows console
+# .exe started by double-click). Linux double-clicks are handled by the wrapper
+# in relaunch_in_terminal(), and macOS keeps the Terminal window open itself.
+def window_will_vanish() -> bool:
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return False
+    try:
+        import ctypes
+        # GetConsoleProcessList reports how many processes share our console.
+        # When double-clicked from Explorer only PyInstaller's bootloader and
+        # this app are attached (<= 2); launched from a shell, the shell is
+        # attached too (>= 3), so the window won't disappear when we exit.
+        buffer = (ctypes.c_uint * 4)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(buffer, 4)
+        return count == 0 or count <= 2
+    except Exception:
+        # If we can't tell, err on the side of pausing rather than vanishing
+        return True
+
+
+def pause_before_exit() -> None:
+    if not window_will_vanish():
+        return
+    try:
+        input("\nPress Enter to close this window...")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
 def main() -> int:
     """Today's the day :D"""
-    __init__()
+    # Before anything else, make sure we're running somewhere the user can see
+    if relaunch_in_terminal():
+        return 0
 
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("-d", "--verbose", type=int, choices=[0, 1, 2], dest="verbose_level")
-
-    args = argparser.parse_args()
+    args = build_parser().parse_args()
     verbose_level = args.verbose_level
-    if verbose_level is None:
-        verbose_level = 0
+
+    __init__()
 
     # create a temporary directory using the context manager
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1380,4 +1534,25 @@ def main() -> int:
     return return_code
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = 1
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        print("\nInterrupted. Exiting without making changes.")
+        exit_code = 130
+    except EOFError:
+        # Reached e.g. when launched with no usable terminal for input()
+        print("\nNo interactive input available. Exiting.")
+        exit_code = 1
+    except Exception:
+        import traceback
+        print("\nAn unexpected error occurred:\n")
+        traceback.print_exc()
+        exit_code = 1
+    finally:
+        # On a normal exit the program has already prompted the user before
+        # finishing; only pause here when something went wrong, so a
+        # double-clicked window doesn't vanish before the error can be read.
+        if exit_code != 0:
+            pause_before_exit()
+    sys.exit(exit_code)

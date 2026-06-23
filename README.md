@@ -19,10 +19,12 @@ Download the binary for your OS from the [Releases](https://github.com/iy4vet/xp
 | Linux x64 | [`organiser-linux-x64`](https://github.com/iy4vet/xplane-scenery-pack-organiser/releases/latest/download/organiser-linux-x64) |
 | Linux ARM64 | [`organiser-linux-arm64`](https://github.com/iy4vet/xplane-scenery-pack-organiser/releases/latest/download/organiser-linux-arm64) |
 
-On Windows, just double-click the `.exe`. On macOS/Linux you may need to make it executable first:
+On Windows, just double-click the `.exe`. On macOS/Linux you may need to make it executable first (`chmod +x`) before double-clicking. On macOS, Gatekeeper will likely block it the first time (eg. "_cannot be opened because the developer cannot be verified_"). To allow it, **right-click → Open** and confirm once, or run `xattr -d com.apple.quarantine organiser-macos-arm64` in Terminal.
+
+You can always run it from a terminal instead:
 
 ```sh
-# Example (Linux):
+# Example (Linux, similar for macOS):
 chmod +x organiser-linux-x64
 ./organiser-linux-x64
 ```
@@ -36,7 +38,7 @@ pip install -r requirements.txt
 python organiser.py
 ```
 
-> **Tip:** If the program crashes or if you get unexpected results, re-run with `--verbose 1` or `--verbose 2` for debugging!
+**Tip:** Run `organiser --help` for the full list of options, or `organiser --version` to check which version you have. If the program crashes or if you get unexpected results, re-run with `-v` (or `--verbose 2` for full debug output)
 
 ## Usage
 
@@ -90,6 +92,7 @@ A huge thank-you to these awesome people:
 
 ## Changelog
 
+- **3.2r2** - Add: double-click execute on Linux/macOS. Improve: CLI polish
 - **3.2r1** - Fix: 7z-compressed DSF can have any internal filename (eg. o4xp_2_xp12 output)
 - **3.1r1** - Add: macOS alias parsing. Add: CI/CD pipeline with 6-platform binary builds. Fix: disabled pack import. Update: all dependencies for Windows ARM64 compatibility.
 - **3.0r1** - Fix: `shutil` compatibility issue.
