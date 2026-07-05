@@ -30,7 +30,7 @@ if sys.platform == "darwin":
     import Cocoa
 
 # Version
-__version__ = "3.2r3"
+__version__ = "3.3r1"
 
 # Module logger
 log = logging.getLogger("organiser")
@@ -190,7 +190,7 @@ class SortPacks:
         self.airport_registry = {"path": [], "line": [], "icaos": []}
         # Classification variable declarations
         self.unsorted_registry = []      # list of packs that couldn't be classified
-        self.quirks = {"Prefab Apt": [], "AO Overlay": [], "AO Region": [], "AO Root": [], "SimHeaven": []}
+        self.quirks = {"Prefab Apt": [], "AO Overlay": [], "AO Region": [], "AO Root": [], "AEP Overlay": [], "SimHeaven": [], "Global Forests": []}
         self.airports = {"Custom": [], "Default": [], "Global": []}
         self.overlays = {"Custom": [], "Default": []}
         self.meshes = {"Ortho": [], "Terrain": []}
@@ -558,18 +558,27 @@ class SortPacks:
             log.debug(f"SortPacks process_type_mesh: caught '{overlay}' from mesh_dsf_read")
             self.dsferror_registry.append([dirpath, overlay])
             return
-        # Check for AutoOrtho and SimHeaven quirks
+        # Check for AutoOrtho, AEP, SimHeaven, and Global Forests quirks
         mesh_ao = self.process_quirk_ao(dirname)
-        mesh_simheaven = self.process_quirk_simheaven(dirname)
         if overlay:
+            # Tentative standard classification, passed on to the quirk classifiers
+            if self.misc_functions.str_contains(dirname, ["X-Plane Landmarks"]):
+                mesh_result = "Default Overlay"
+            else:
+                mesh_result = "Custom Overlay"
+            mesh_aep = self.process_quirk_aep(dirpath, dirname, mesh_result)
+            mesh_simheaven = self.process_quirk_simheaven(dirname, mesh_result)
+            mesh_globalforests = self.process_quirk_globalforests(dirpath, dirname, mesh_result)
             if mesh_ao in ["AO Overlay"]:
                 return mesh_ao
+            elif mesh_aep in ["AEP Overlay"]:
+                return mesh_aep
             elif mesh_simheaven in ["SimHeaven"]:
                 return mesh_simheaven
-            elif self.misc_functions.str_contains(dirname, ["X-Plane Landmarks"]):
-                return "Default Overlay"
+            elif mesh_globalforests in ["Global Forests"]:
+                return mesh_globalforests
             else:
-                return "Custom Overlay"
+                return mesh_result
         else:
             if mesh_ao in ["AO Region", "AO Root"]:
                 return mesh_ao
@@ -583,10 +592,12 @@ class SortPacks:
         other_result = None
         if self.misc_functions.dir_contains(dirpath, ["library.txt"], "generic"):
             other_result = "Library"
-            # Check for SimHeaven
-            other_simheaven = self.process_quirk_simheaven(dirname)
-            if other_simheaven:
-                other_result = other_simheaven
+            # Check for SimHeaven and Global Forests quirks
+            other_quirk = self.process_quirk_simheaven(dirname, other_result)
+            if not other_quirk:
+                other_quirk = self.process_quirk_globalforests(dirpath, dirname, other_result)
+            if other_quirk:
+                other_result = other_quirk
         if self.misc_functions.dir_contains(dirpath, ["plugins"]):
             other_result = "Plugin"
         if other_result:
@@ -621,14 +632,73 @@ class SortPacks:
         return prefab_result
 
     # Check if the pack is from SimHeaven
-    # Called in process_type_mesh and process_type_other
-    def process_quirk_simheaven(self, dirname: str) -> str:
+    # The X-World Vegetation Library is deliberately kept in this tier: Global Forests must end up
+    # below every SimHeaven pack including it, and keeping them together guarantees that
+    # Called in process_type_mesh and process_type_other with the tentative standard classification
+    def process_quirk_simheaven(self, dirname: str, main_type: str = None) -> str:
+        # Only overlay- or library-type packs belong in this tier
+        if main_type not in ["Default Overlay", "Custom Overlay", "Library"]:
+            return None
         simheaven_result = None
         if self.misc_functions.str_contains(dirname, ["simheaven"], casesensitive=False):
             simheaven_result = "SimHeaven"
         if simheaven_result:
             log.debug(f"SortPacks process_quirk_simheaven: found to be {simheaven_result}")
         return simheaven_result
+
+    # Check if the pack is from X-Codr Designs' Airport Enhancement Package (AEP)
+    # AEP's overlay packs must end up above all other overlays. Its library pack needs no special
+    # treatment: it carries a plugins folder and so already sorts into the Plugin tier
+    # Called in process_type_mesh with the tentative standard classification
+    def process_quirk_aep(self, dirpath: pathlib.Path, dirname: str, main_type: str = None) -> str:
+        # Only overlay-type packs may be hoisted by this quirk. This also shields against airport
+        # packs named after Buenos Aires Aeroparque, whose IATA code is AEP
+        if main_type not in ["Default Overlay", "Custom Overlay"]:
+            return None
+        aep_result = None
+        # Name check: "AEP" as a standalone token, or the spelt-out product name
+        leafname = pathlib.Path(dirname).name or str(dirname)
+        if re.search(r"(?<![a-z0-9])aep(?![a-z0-9])", leafname.lower()):
+            aep_result = "AEP Overlay"
+        elif "airportenhancementpackage" in self.misc_functions.str_normalise(leafname):
+            aep_result = "AEP Overlay"
+        # Content check, in case the folder was renamed: the updater config carries the product name,
+        # and the patch list points at the AEP patches URL
+        if not aep_result:
+            skunk_path = self.misc_functions.dir_find_file(dirpath, "skunkcrafts_updater.cfg")
+            if skunk_path and "airportenhancementpackage" in self.misc_functions.str_normalise(self.misc_functions.read_text(skunk_path)):
+                aep_result = "AEP Overlay"
+        if not aep_result:
+            patches_path = self.misc_functions.dir_find_file(dirpath, "patches.txt")
+            if patches_path and "xp-aep" in self.misc_functions.read_text(patches_path):
+                aep_result = "AEP Overlay"
+        if aep_result:
+            log.debug(f"SortPacks process_quirk_aep: found to be {aep_result}")
+        return aep_result
+
+    # Check if the pack is GeoReality's Global Forests (v1 or v2)
+    # These must end up below every SimHeaven pack: both export the same forests/ library paths, and
+    # SimHeaven's X-World Vegetation Library must keep priority or X-World autogen vegetation breaks
+    # This follows the guidance agreed between the Global Forests author and SimHeaven users on the
+    # x-plane.org forums, and mirrors xOrganizer V3.3.0's "Z-Global Forests" rule
+    # Called in process_type_mesh and process_type_other with the tentative standard classification
+    def process_quirk_globalforests(self, dirpath: pathlib.Path, dirname: str, main_type: str = None) -> str:
+        # v2 is a worldwide overlay plus a forest library, v1 a pure library - nothing else qualifies
+        if main_type not in ["Default Overlay", "Custom Overlay", "Library"]:
+            return None
+        globalforests_result = None
+        # Name check: normalised so "Global Forests v2 (GeoReality)", "Global_Forests", etc. all match
+        leafname = pathlib.Path(dirname).name or str(dirname)
+        if "globalforests" in self.misc_functions.str_normalise(leafname):
+            globalforests_result = "Global Forests"
+        # Content check, in case the folder was renamed: the Orbx install config names the product
+        if not globalforests_result:
+            orbx_path = self.misc_functions.dir_find_file(dirpath, "orbx_xp_config.json")
+            if orbx_path and "globalforests" in self.misc_functions.str_normalise(self.misc_functions.read_text(orbx_path)):
+                globalforests_result = "Global Forests"
+        if globalforests_result:
+            log.debug(f"SortPacks process_quirk_globalforests: found to be {globalforests_result}")
+        return globalforests_result
 
     # Classify the pack
     def process_main(self, path, shortcut=False) -> None:
@@ -685,7 +755,7 @@ class SortPacks:
                 self.meshes[pack_type[:-5]].append(line)
                 log.debug(f"SortPacks process_main: classified as '{pack_type}'")
             # Quirk handling
-            elif pack_type in ["AO Overlay", "AO Region", "AO Root", "SimHeaven"]:
+            elif pack_type in ["AO Overlay", "AO Region", "AO Root", "AEP Overlay", "SimHeaven", "Global Forests"]:
                 self.quirks[pack_type].append(line)
                 log.debug(f"SortPacks process_main: classified as quirk '{pack_type}'")
             else:
@@ -699,7 +769,7 @@ class SortPacks:
                 self.other[pack_type].append(line)
                 log.debug(f"SortPacks process_main: classified as '{pack_type}'")
             # Quirk handling
-            elif pack_type in ["SimHeaven"]:
+            elif pack_type in ["SimHeaven", "Global Forests"]:
                 self.quirks[pack_type].append(line)
                 log.debug(f"SortPacks process_main: classified as quirk '{pack_type}'")
             else:
@@ -1056,7 +1126,9 @@ class WriteINI:
             "airports: global": self.airports["Global"],
             "other: plugin": self.other["Plugin"],
             "other: library": self.other["Library"],
+            "quirks: aep overlay": self.quirks["AEP Overlay"],
             "quirks: simheaven": self.quirks["SimHeaven"],
+            "quirks: global forests": self.quirks["Global Forests"],
             "overlays: custom": self.overlays["Custom"],
             "overlays: default": self.overlays["Default"],
             "quirks: ao overlay": self.quirks["AO Overlay"],
@@ -1225,6 +1297,28 @@ class misc_functions:
                 if not present:
                     return False
             return True
+
+    # Find a file by name (case insensitive) in a directory and return its case-sensitive path
+    def dir_find_file(self, directory: pathlib.Path, filename: str) -> typing.Union[pathlib.Path, None]:
+        for file in self.dir_list(directory, "files"):
+            if file.lower() == filename.lower():
+                return directory / file
+        return None
+
+    # Read a small text file, returning its contents lowercased, or an empty string on any failure
+    # Used by the quirk classifiers to look for identifying markers inside a pack
+    def read_text(self, path: pathlib.Path, maxchars: int = BUF_SIZE) -> str:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                return file.read(maxchars).lower()
+        except Exception as e:
+            log.debug(f"misc_functions read_text: unhandled error '{e}' for '{path}'")
+            return ""
+
+    # Normalise a string for lenient matching: lowercase with everything but letters and digits stripped
+    # This way "Global Forests v2 (GeoReality)", "Global_Forests", "zzz-global forests" etc. all match
+    def str_normalise(self, searchstr: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", searchstr.lower())
 
     # Check if any of the items in a list are present in a given string
     # Used for checking if a scenery package is default

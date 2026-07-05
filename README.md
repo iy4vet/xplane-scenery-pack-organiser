@@ -1,4 +1,4 @@
-# Scenery Pack Organiser - XP10/11/12 v3.2r3
+# Scenery Pack Organiser - XP10/11/12 v3.3r1
 
 Are you tired of sifting through all the packs in the Custom Scenery folder and reordering them manually? Do you hate having to start and quit X-Plane just to add new scenery packs to the file so you can organise it? This utility is for you!
 
@@ -60,7 +60,9 @@ The program is interactive - it will guide you through each step:
   - Global Airports
   - Scenery Plugins
   - Scenery Libraries
+  - *[Airport Enhancement Package (AEP)](https://www.x-codrdesigns.com/xp-aep/) Overlays*
   - *[SimHeaven](https://simheaven.com/) Overlays*
+  - *[Global Forests](https://www.global-forests.com/)*
   - Custom Overlays
   - Default Overlays
   - *[AutoOrtho](https://forums.x-plane.org/index.php?/forums/topic/259020-autoortho-streaming-ortho-imagery-for-x-plane-12-and-11/) Overlays*
@@ -68,7 +70,7 @@ The program is interactive - it will guide you through each step:
   - *[AutoOrtho](https://forums.x-plane.org/index.php?/forums/topic/259020-autoortho-streaming-ortho-imagery-for-x-plane-12-and-11/) Regions*
   - Terrain Meshes
 - Supports Windows shortcuts (.LNK files, eg. for SAM Library)
-- Supports [Prefab Airports](https://forums.x-plane.org/index.php?/files/file/27582-prefab-scenery-for-25000-airports/) and [AutoOrtho](https://forums.x-plane.org/index.php?/forums/topic/259020-autoortho-streaming-ortho-imagery-for-x-plane-12-and-11/)
+- Supports [Prefab Airports](https://forums.x-plane.org/index.php?/files/file/27582-prefab-scenery-for-25000-airports/), [AutoOrtho](https://forums.x-plane.org/index.php?/forums/topic/259020-autoortho-streaming-ortho-imagery-for-x-plane-12-and-11/), [Airport Enhancement Package](https://www.x-codrdesigns.com/xp-aep/), and [Global Forests](https://www.global-forests.com/)
 - Attempts to locate X-Plane installs automatically, letting you choose between the results or manually inputting an X-Plane install path
 - Offers to carry over SCENERY_PACK_DISABLED tags from existing scenery_packs.ini
 - Checks for Custom Airport overlaps and resolves them with user input
@@ -92,6 +94,7 @@ A huge thank-you to these awesome people:
 
 ## Changelog
 
+- **3.3r1** - Add: AEP and Global Forests custom sort order. Improve: quirk classifiers receive standard classification and fall back to content markers so renamed folders are still recognised.
 - **3.2r3** - Minor fixes
 - **3.2r2** - Add: double-click execute on Linux/macOS. Improve: CLI polish
 - **3.2r1** - Fix: 7z-compressed DSF can have any internal filename (eg. o4xp_2_xp12 output)
